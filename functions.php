@@ -909,14 +909,171 @@ function gi_register_taxonomies() {
 add_action('init', 'gi_register_taxonomies');
 
 // =============================================================================
-// 3. AJAX FUNCTIONS (Complete Version)
+// 3. HELPER FUNCTIONS (Required for AJAX)
+// =============================================================================
+
+/**
+ * 安全なメタデータ取得
+ */
+function gi_safe_get_meta($post_id, $key, $default = '') {
+    $value = get_post_meta($post_id, $key, true);
+    return $value !== '' ? $value : $default;
+}
+
+/**
+ * ステータスをUI用に変換
+ */
+function gi_map_application_status_ui($status) {
+    $map = array(
+        'open' => '募集中',
+        'active' => '募集中',
+        'upcoming' => '準備中',
+        'closed' => '終了'
+    );
+    return isset($map[$status]) ? $map[$status] : $status;
+}
+
+/**
+ * 金額フォーマット
+ */
+function gi_format_amount_with_unit($amount) {
+    if (empty($amount) || !is_numeric($amount)) {
+        return '-';
+    }
+    
+    $amount = intval($amount);
+    
+    if ($amount >= 100000000) {
+        return number_format($amount / 100000000, 1) . '億円';
+    } elseif ($amount >= 10000000) {
+        return number_format($amount / 10000000, 1) . '千万円';
+    } elseif ($amount >= 10000) {
+        return number_format($amount / 10000) . '万円';
+    } else {
+        return number_format($amount) . '円';
+    }
+}
+
+/**
+ * 締切日フォーマット
+ */
+function gi_get_formatted_deadline($post_id) {
+    $deadline = get_post_meta($post_id, 'deadline_date', true);
+    
+    if (empty($deadline)) {
+        return '随時';
+    }
+    
+    // YYYYMMDDフォーマットの場合
+    if (strlen($deadline) === 8 && is_numeric($deadline)) {
+        $year = substr($deadline, 0, 4);
+        $month = substr($deadline, 4, 2);
+        $day = substr($deadline, 6, 2);
+        
+        // 現在日付との比較
+        $current_date = date('Ymd');
+        if ($deadline < $current_date) {
+            return '終了';
+        }
+        
+        return $year . '年' . intval($month) . '月' . intval($day) . '日';
+    }
+    
+    // その他のフォーマットの場合
+    if (strtotime($deadline)) {
+        return date('Y年n月j日', strtotime($deadline));
+    }
+    
+    return $deadline;
+}
+
+/**
+ * ユーザーのお気に入りを取得
+ */
+function gi_get_user_favorites($user_id = null) {
+    if (!$user_id) {
+        $user_id = get_current_user_id();
+    }
+    
+    if ($user_id) {
+        $favorites = get_user_meta($user_id, 'gi_favorites', true);
+        return is_array($favorites) ? $favorites : array();
+    }
+    
+    // 非ログインユーザーの場合はCookieから取得
+    if (isset($_COOKIE['gi_favorites'])) {
+        return array_filter(explode(',', $_COOKIE['gi_favorites']));
+    }
+    
+    return array();
+}
+
+/**
+ * 安全なURLエスケープ
+ */
+function gi_safe_url($url) {
+    return esc_url($url);
+}
+
+/**
+ * 安全なHTMLエスケープ
+ */
+function gi_safe_escape($text) {
+    return esc_html($text);
+}
+
+/**
+ * 安全な抜粋取得
+ */
+function gi_safe_excerpt($text, $length = 100) {
+    $text = strip_tags($text);
+    $text = mb_substr($text, 0, $length);
+    if (mb_strlen($text) === $length) {
+        $text .= '...';
+    }
+    return $text;
+}
+
+/**
+ * 安全な日付フォーマット
+ */
+function gi_safe_date_format($date, $format = 'Y年n月j日') {
+    if (empty($date)) {
+        return '-';
+    }
+    
+    if (is_numeric($date) && strlen($date) === 8) {
+        $year = substr($date, 0, 4);
+        $month = substr($date, 4, 2);
+        $day = substr($date, 6, 2);
+        $date = $year . '-' . $month . '-' . $day;
+    }
+    
+    $timestamp = strtotime($date);
+    if ($timestamp) {
+        return date($format, $timestamp);
+    }
+    
+    return $date;
+}
+
+// =============================================================================
+// 4. AJAX FUNCTIONS (Complete Version)
 // =============================================================================
 
 /**
  * 【完全修正版】AJAX - 助成金読み込み処理（グリッド表示修正版）
  */
 function gi_ajax_load_grants() {
+    // デバッグログ
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log('=== gi_ajax_load_grants called ===');
+        error_log('POST data: ' . print_r($_POST, true));
+        error_log('Nonce: ' . ($_POST['nonce'] ?? 'not set'));
+    }
+    
     if (!wp_verify_nonce($_POST['nonce'] ?? '', 'gi_ajax_nonce')) {
+        error_log('Nonce verification failed!');
         wp_send_json_error('セキュリティチェックに失敗しました');
     }
 
@@ -1164,7 +1321,52 @@ function gi_ajax_load_grants() {
         $pagination_html = ob_get_clean();
     }
 
+    // グラントデータを配列として準備
+    $grants = array();
+    if ($query->have_posts()) {
+        $query->rewind_posts();
+        while ($query->have_posts()) {
+            $query->the_post();
+            $post_id = get_the_ID();
+            
+            $grant_terms = get_the_terms($post_id, 'grant_category');
+            $prefecture_terms = get_the_terms($post_id, 'grant_prefecture');
+            
+            $grants[] = array(
+                'id' => $post_id,
+                'title' => get_the_title(),
+                'permalink' => get_permalink(),
+                'excerpt' => get_the_excerpt(),
+                'thumbnail' => get_the_post_thumbnail_url($post_id, 'gi-card-thumb'),
+                'main_category' => (!is_wp_error($grant_terms) && !empty($grant_terms)) ? $grant_terms[0]->name : '',
+                'prefecture' => (!is_wp_error($prefecture_terms) && !empty($prefecture_terms)) ? $prefecture_terms[0]->name : '',
+                'organization' => gi_safe_get_meta($post_id, 'organization', ''),
+                'deadline' => gi_get_formatted_deadline($post_id),
+                'amount' => gi_safe_get_meta($post_id, 'max_amount', '-'),
+                'amount_numeric' => gi_safe_get_meta($post_id, 'max_amount_numeric', 0),
+                'deadline_timestamp' => gi_safe_get_meta($post_id, 'deadline_date', ''),
+                'status' => gi_map_application_status_ui(gi_safe_get_meta($post_id, 'application_status', 'open')),
+                'difficulty' => gi_safe_get_meta($post_id, 'grant_difficulty', ''),
+                'success_rate' => gi_safe_get_meta($post_id, 'grant_success_rate', 0),
+                'subsidy_rate' => gi_safe_get_meta($post_id, 'subsidy_rate', ''),
+                'target_business' => gi_safe_get_meta($post_id, 'target_business', ''),
+                'html' => '' // 各カードのHTMLを格納
+            );
+        }
+        wp_reset_postdata();
+    }
+    
+    // 各グラントのHTMLを生成
+    foreach ($grants as &$grant) {
+        if ($view === 'grid') {
+            $grant['html'] = gi_render_modern_grant_card($grant);
+        } else {
+            $grant['html'] = gi_render_modern_grant_list_card($grant);
+        }
+    }
+    
     wp_send_json_success(array(
+        'grants' => $grants,
         'html' => $html,
         'found_posts' => $query->found_posts,
         'pagination' => array(

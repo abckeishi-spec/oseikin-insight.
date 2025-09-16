@@ -1130,10 +1130,20 @@ get_header();
 
 <!-- 🚀 統合検索システム連携JavaScript（究極版） -->
 <script>
+// グローバル設定
+window.giSearchConfig = {
+    ajaxUrl: '<?php echo admin_url('admin-ajax.php'); ?>',
+    nonce: '<?php echo wp_create_nonce('gi_ajax_nonce'); ?>',
+    isUserLoggedIn: <?php echo is_user_logged_in() ? 'true' : 'false'; ?>,
+    currentUserId: <?php echo get_current_user_id(); ?>
+};
+
 document.addEventListener('DOMContentLoaded', function() {
     'use strict';
 
     console.log('📄 Grant Archive Ultimate - 初期化開始');
+    console.log('AJAX URL:', window.giSearchConfig.ajaxUrl);
+    console.log('Nonce:', window.giSearchConfig.nonce);
 
     // 初期パラメータを取得
     const archiveElement = document.getElementById('grant-archive-page');
@@ -1374,43 +1384,62 @@ document.addEventListener('DOMContentLoaded', function() {
         async executeSearch() {
             if (this.state.isLoading) return;
 
+            console.log('🔍 検索実行開始', {
+                filters: this.state.filters,
+                page: this.state.currentPage,
+                view: this.state.currentView
+            });
+
             this.state.isLoading = true;
             this.showLoading(true);
 
             try {
+                const params = new URLSearchParams({
+                    action: 'gi_load_grants',
+                    nonce: window.giSearchConfig.nonce,
+                    search: this.state.filters.search,
+                    categories: JSON.stringify(this.state.filters.categories),
+                    prefectures: JSON.stringify(this.state.filters.prefectures),
+                    amount: this.state.filters.amount,
+                    status: JSON.stringify(this.state.filters.status),
+                    difficulty: JSON.stringify(this.state.filters.difficulty),
+                    success_rate: JSON.stringify(this.state.filters.success_rate),
+                    sort: this.state.filters.sort,
+                    view: this.state.currentView,
+                    page: this.state.currentPage
+                });
+
+                console.log('📡 AJAXリクエスト送信:', {
+                    url: window.giSearchConfig.ajaxUrl,
+                    params: params.toString()
+                });
+
                 const response = await fetch(window.giSearchConfig.ajaxUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
                     },
-                    body: new URLSearchParams({
-                        action: 'gi_load_grants',
-                        nonce: window.giSearchConfig.nonce,
-                        search: this.state.filters.search,
-                        categories: JSON.stringify(this.state.filters.categories),
-                        prefectures: JSON.stringify(this.state.filters.prefectures),
-                        amount: this.state.filters.amount,
-                        status: JSON.stringify(this.state.filters.status),
-                        difficulty: JSON.stringify(this.state.filters.difficulty),
-                        success_rate: JSON.stringify(this.state.filters.success_rate),
-                        sort: this.state.filters.sort,
-                        view: this.state.currentView,
-                        page: this.state.currentPage
-                    })
+                    body: params
                 });
 
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
                 const data = await response.json();
+                console.log('📥 AJAXレスポンス受信:', data);
 
                 if (data.success) {
                     this.displayResults(data.data);
                     this.updateURL();
                     this.updateActiveFilters();
                 } else {
+                    console.error('❌ AJAXエラー:', data.data);
                     this.showError(data.data || '検索に失敗しました');
                 }
             } catch (error) {
-                console.error('検索エラー:', error);
-                this.showError('検索中にエラーが発生しました');
+                console.error('❌ 検索エラー:', error);
+                this.showError('検索中にエラーが発生しました: ' + error.message);
             } finally {
                 this.state.isLoading = false;
                 this.showLoading(false);
@@ -1894,6 +1923,392 @@ document.addEventListener('DOMContentLoaded', function() {
             document.querySelectorAll('.status-checkbox').forEach(cb => {
                 cb.checked = this.state.filters.status.includes(cb.value);
             });
+        },
+
+        // ローディング表示管理
+        showLoading(show) {
+            const loadingEl = document.getElementById('loading-indicator');
+            const grantsDisplay = document.getElementById('grants-display');
+            
+            if (loadingEl) {
+                if (show) {
+                    loadingEl.classList.remove('hidden');
+                    loadingEl.innerHTML = `
+                        <div class="loading-spinner"></div>
+                        <span>データを読み込み中...</span>
+                    `;
+                } else {
+                    loadingEl.classList.add('hidden');
+                }
+            }
+
+            // 初期ローディング表示を削除
+            if (!show && grantsDisplay) {
+                const initialLoading = grantsDisplay.querySelector('.initial-loading');
+                if (initialLoading) {
+                    initialLoading.remove();
+                }
+            }
+        },
+
+        // エラー表示
+        showError(message) {
+            const container = document.getElementById('grants-display');
+            if (container) {
+                container.innerHTML = `
+                    <div class="col-span-full text-center py-12">
+                        <div class="text-red-500 dark:text-red-400 mb-4">
+                            <i class="fas fa-exclamation-triangle text-4xl"></i>
+                        </div>
+                        <div class="text-gray-700 dark:text-gray-300 text-lg font-semibold mb-2">
+                            エラーが発生しました
+                        </div>
+                        <div class="text-gray-500 dark:text-gray-400">
+                            ${message}
+                        </div>
+                        <button onclick="window.ArchiveManager.executeSearch()" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                            再試行
+                        </button>
+                    </div>
+                `;
+            }
+        },
+
+        // URL更新
+        updateURL() {
+            const params = new URLSearchParams();
+            
+            if (this.state.filters.search) params.set('search', this.state.filters.search);
+            if (this.state.filters.categories.length > 0) params.set('category', this.state.filters.categories[0]);
+            if (this.state.filters.prefectures.length > 0) params.set('prefecture', this.state.filters.prefectures[0]);
+            if (this.state.filters.amount) params.set('amount', this.state.filters.amount);
+            if (this.state.filters.status.length > 0) params.set('status', this.state.filters.status[0]);
+            if (this.state.filters.difficulty.length > 0) params.set('difficulty', this.state.filters.difficulty[0]);
+            if (this.state.filters.success_rate.length > 0) params.set('success_rate', this.state.filters.success_rate[0]);
+            if (this.state.filters.sort !== 'date_desc') params.set('orderby', this.state.filters.sort);
+            if (this.state.currentView !== 'grid') params.set('view', this.state.currentView);
+            if (this.state.currentPage > 1) params.set('page', this.state.currentPage);
+            
+            const queryString = params.toString();
+            const newURL = window.location.pathname + (queryString ? '?' + queryString : '');
+            
+            window.history.pushState({}, '', newURL);
+        },
+
+        // アクティブフィルター更新
+        updateActiveFilters() {
+            const activeFiltersEl = document.getElementById('active-filters');
+            const tagsContainer = document.getElementById('active-filter-tags');
+            
+            if (!activeFiltersEl || !tagsContainer) return;
+            
+            const hasFilters = 
+                this.state.filters.search ||
+                this.state.filters.categories.length > 0 ||
+                this.state.filters.prefectures.length > 0 ||
+                this.state.filters.amount ||
+                this.state.filters.status.length > 0 ||
+                this.state.filters.difficulty.length > 0 ||
+                this.state.filters.success_rate.length > 0;
+            
+            if (hasFilters) {
+                activeFiltersEl.classList.remove('hidden');
+                
+                let tagsHTML = '';
+                
+                if (this.state.filters.search) {
+                    tagsHTML += `<span class="filter-tag">検索: ${this.state.filters.search}<button class="filter-tag-remove" data-filter="search"><i class="fas fa-times"></i></button></span>`;
+                }
+                
+                this.state.filters.categories.forEach(cat => {
+                    tagsHTML += `<span class="filter-tag">カテゴリ: ${cat}<button class="filter-tag-remove" data-filter="category" data-value="${cat}"><i class="fas fa-times"></i></button></span>`;
+                });
+                
+                this.state.filters.prefectures.forEach(pref => {
+                    tagsHTML += `<span class="filter-tag">都道府県: ${pref}<button class="filter-tag-remove" data-filter="prefecture" data-value="${pref}"><i class="fas fa-times"></i></button></span>`;
+                });
+                
+                tagsContainer.innerHTML = tagsHTML;
+                
+                // フィルター削除ボタンのイベント
+                tagsContainer.querySelectorAll('.filter-tag-remove').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.removeFilter(btn.dataset.filter, btn.dataset.value);
+                    });
+                });
+                
+            } else {
+                activeFiltersEl.classList.add('hidden');
+            }
+        },
+
+        // フィルター削除
+        removeFilter(type, value) {
+            switch(type) {
+                case 'search':
+                    this.state.filters.search = '';
+                    document.getElementById('grant-search').value = '';
+                    break;
+                case 'category':
+                    this.state.filters.categories = this.state.filters.categories.filter(c => c !== value);
+                    break;
+                case 'prefecture':
+                    this.state.filters.prefectures = this.state.filters.prefectures.filter(p => p !== value);
+                    break;
+            }
+            
+            this.state.currentPage = 1;
+            this.executeSearch();
+        },
+
+        // ページネーション更新
+        updatePagination(paginationData) {
+            const container = document.getElementById('pagination-container');
+            if (container && paginationData && paginationData.html) {
+                container.innerHTML = paginationData.html;
+                
+                // ページボタンのイベントバインド
+                container.querySelectorAll('.pagination-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        this.state.currentPage = parseInt(btn.dataset.page);
+                        this.executeSearch();
+                        // ページ移動時にスクロールトップ
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    });
+                });
+            }
+        },
+
+        // 数値アニメーション
+        animateNumber(element, target) {
+            const duration = 1000;
+            const start = parseInt(element.textContent) || 0;
+            const increment = (target - start) / (duration / 16);
+            let current = start;
+            
+            const timer = setInterval(() => {
+                current += increment;
+                if ((increment > 0 && current >= target) || (increment < 0 && current <= target)) {
+                    current = target;
+                    clearInterval(timer);
+                }
+                element.textContent = Math.round(current).toLocaleString();
+            }, 16);
+        },
+
+        // その他の必要な関数
+        clearSearch() {
+            document.getElementById('grant-search').value = '';
+            this.state.filters.search = '';
+            this.executeSearch();
+        },
+
+        startVoiceSearch() {
+            alert('音声検索機能は現在開発中です');
+        },
+
+        showAISearch() {
+            alert('AI検索機能は現在開発中です');
+        },
+
+        applyQuickFilter(filter) {
+            // クイックフィルターの適用
+            switch(filter) {
+                case 'active':
+                    this.state.filters.status = ['open'];
+                    break;
+                case 'high-amount':
+                    this.state.filters.amount = '5000';
+                    break;
+                case 'easy':
+                    this.state.filters.difficulty = ['easy'];
+                    break;
+            }
+            this.executeSearch();
+        },
+
+        switchView(view) {
+            this.state.currentView = view;
+            document.querySelectorAll('.view-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.view === view);
+            });
+            this.executeSearch();
+        },
+
+        toggleFilterSidebar() {
+            const sidebar = document.getElementById('filter-sidebar');
+            if (sidebar) {
+                sidebar.classList.toggle('hidden');
+            }
+        },
+
+        showAIRecommend() {
+            const modal = document.getElementById('ai-recommend-modal');
+            if (modal) {
+                modal.classList.remove('hidden');
+            }
+        },
+
+        applyFilters() {
+            // フィルターの収集と適用
+            this.state.filters.categories = [];
+            this.state.filters.prefectures = [];
+            this.state.filters.status = [];
+            this.state.filters.difficulty = [];
+            this.state.filters.success_rate = [];
+
+            document.querySelectorAll('.category-checkbox:checked').forEach(cb => {
+                this.state.filters.categories.push(cb.value);
+            });
+
+            document.querySelectorAll('.prefecture-checkbox:checked').forEach(cb => {
+                this.state.filters.prefectures.push(cb.value);
+            });
+
+            document.querySelectorAll('.status-checkbox:checked').forEach(cb => {
+                this.state.filters.status.push(cb.value);
+            });
+
+            document.querySelectorAll('.difficulty-checkbox:checked').forEach(cb => {
+                this.state.filters.difficulty.push(cb.value);
+            });
+
+            document.querySelectorAll('.success-checkbox:checked').forEach(cb => {
+                this.state.filters.success_rate.push(cb.value);
+            });
+
+            const amountRadio = document.querySelector('input[name="amount"]:checked');
+            if (amountRadio) {
+                this.state.filters.amount = amountRadio.value;
+            }
+
+            this.state.currentPage = 1;
+            this.executeSearch();
+        },
+
+        saveCurrentFilters() {
+            const filterName = prompt('検索条件の名前を入力してください:');
+            if (filterName) {
+                const savedFilter = {
+                    name: filterName,
+                    filters: { ...this.state.filters },
+                    date: new Date().toISOString()
+                };
+                this.state.savedFilters.push(savedFilter);
+                localStorage.setItem('gi_saved_filters', JSON.stringify(this.state.savedFilters));
+                this.loadSavedFilters();
+            }
+        },
+
+        loadSavedFilters() {
+            const container = document.getElementById('saved-filters-list');
+            if (container && this.state.savedFilters.length > 0) {
+                let html = '';
+                this.state.savedFilters.forEach((filter, index) => {
+                    html += `
+                        <div class="saved-filter-item">
+                            <button class="apply-saved-filter" data-index="${index}">
+                                ${filter.name}
+                            </button>
+                            <button class="delete-saved-filter" data-index="${index}">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    `;
+                });
+                container.innerHTML = html;
+                document.getElementById('saved-filters').classList.remove('hidden');
+            }
+        },
+
+        toggleFilterSection(section) {
+            const content = document.getElementById(section + '-content');
+            const header = document.querySelector(`[data-toggle="${section}"]`);
+            if (content && header) {
+                content.classList.toggle('hidden');
+                header.classList.toggle('collapsed');
+            }
+        },
+
+        filterFilterItems(filterType, searchValue) {
+            const items = document.querySelectorAll(`.${filterType}-item`);
+            items.forEach(item => {
+                const label = item.querySelector('.filter-item-label').textContent.toLowerCase();
+                item.style.display = label.includes(searchValue.toLowerCase()) ? '' : 'none';
+            });
+        },
+
+        filterByRegion(region) {
+            // 地域フィルタリング
+            console.log('地域フィルタリング:', region);
+        },
+
+        exportResults() {
+            alert('エクスポート機能は現在開発中です');
+        },
+
+        shareResults() {
+            if (navigator.share) {
+                navigator.share({
+                    title: '助成金検索結果',
+                    text: `${this.state.totalResults}件の助成金が見つかりました`,
+                    url: window.location.href
+                });
+            } else {
+                alert('共有URLをコピーしました');
+                navigator.clipboard.writeText(window.location.href);
+            }
+        },
+
+        resetSearch() {
+            this.resetAllFilters();
+        },
+
+        closeModal(modalId) {
+            const modal = document.getElementById(modalId + '-modal');
+            if (modal) {
+                modal.classList.add('hidden');
+            }
+        },
+
+        getAIRecommendations() {
+            // AI推薦取得
+            alert('AI推薦機能は現在開発中です');
+            this.closeModal('ai-recommend');
+        },
+
+        closeMobileFilter() {
+            const modal = document.getElementById('mobile-filter-modal');
+            if (modal) {
+                modal.classList.add('hidden');
+            }
+        },
+
+        showSearchSuggestions(value) {
+            // 検索サジェスト表示
+            console.log('検索サジェスト:', value);
+        },
+
+        hideSearchSuggestions() {
+            // 検索サジェスト非表示
+        },
+
+        shareGrant(url, title) {
+            if (navigator.share) {
+                navigator.share({
+                    title: title,
+                    url: url
+                });
+            } else {
+                navigator.clipboard.writeText(url);
+                alert('URLをコピーしました');
+            }
+        },
+
+        initAnimations() {
+            // アニメーション初期化
+            console.log('アニメーション初期化');
         }
     };
 
