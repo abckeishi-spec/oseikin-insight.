@@ -2827,29 +2827,6 @@ add_action('wp_footer', 'gi_ajax_javascript_config');
  * 【修正】未定義関数の追加
  */
 
-// 締切日のフォーマット関数
-function gi_get_formatted_deadline($post_id) {
-    $deadline = gi_safe_get_meta($post_id, 'deadline_date');
-    if (!$deadline) {
-        $deadline = gi_safe_get_meta($post_id, 'deadline');
-    }
-    
-    if (!$deadline) {
-        return '';
-    }
-    
-    if (is_numeric($deadline)) {
-        return date('Y年m月d日', intval($deadline));
-    }
-    
-    $timestamp = strtotime($deadline);
-    if ($timestamp !== false) {
-        return date('Y年m月d日', $timestamp);
-    }
-    
-    return $deadline;
-}
-
 /**
  * 【修正】メタフィールドの同期処理（ACF対応）
  */
@@ -2908,26 +2885,7 @@ add_action('save_post', 'gi_sync_grant_meta_on_save', 20, 3);
  * セキュリティ・ヘルパー関数群（強化版）
  */
 
-// 安全なメタ取得
-function gi_safe_get_meta($post_id, $key, $default = '') {
-    if (!$post_id || !is_numeric($post_id)) {
-        return $default;
-    }
-    
-    $value = get_post_meta($post_id, $key, true);
-    
-    if (is_null($value) || $value === false || $value === '') {
-        if (function_exists('get_field')) {
-            $value = get_field($key, $post_id);
-        }
-    }
-    
-    if (is_null($value) || $value === false || $value === '') {
-        return $default;
-    }
-    
-    return $value;
-}
+// gi_safe_get_meta関数は918行目で定義済みのため削除
 
 // 安全な属性出力
 function gi_safe_attr($value) {
@@ -2981,13 +2939,7 @@ function gi_safe_percent_format($value, $decimals = 1) {
     return number_format($num, $decimals) . '%';
 }
 
-// 安全なURL出力
-function gi_safe_url($url) {
-    if (empty($url)) {
-        return '';
-    }
-    return esc_url($url);
-}
+// gi_safe_url関数は1014行目で定義済みのため削除
 
 // 安全なJSON出力
 function gi_safe_json($data) {
@@ -3175,24 +3127,7 @@ function gi_map_application_status_ui($app_status) {
     }
 }
 
-/**
- * お気に入り一覧取得
- */
-function gi_get_user_favorites($user_id = null) {
-    if (!$user_id) {
-        $user_id = get_current_user_id();
-    }
-    
-    if (!$user_id) {
-        $cookie_name = 'gi_favorites';
-        $favorites = isset($_COOKIE[$cookie_name]) ? array_filter(explode(',', $_COOKIE[$cookie_name])) : array();
-    } else {
-        $favorites = get_user_meta($user_id, 'gi_favorites', true);
-        if (!is_array($favorites)) $favorites = array();
-    }
-    
-    return array_map('intval', $favorites);
-}
+// gi_get_user_favorites関数は993行目で定義済みのため削除
 
 /**
  * 投稿カテゴリー取得
@@ -4754,113 +4689,7 @@ function gi_ajax_permissions() {
 }
 add_action('init', 'gi_ajax_permissions');
 
-/**
- * AJAX - 検索サジェスト取得
- */
-function gi_ajax_get_search_suggestions() {
-    // Nonce検証
-    if (!wp_verify_nonce($_POST['nonce'] ?? '', 'gi_ajax_nonce')) {
-        wp_send_json_error('セキュリティチェックに失敗しました');
-    }
-    
-    $keyword = sanitize_text_field($_POST['keyword'] ?? '');
-    
-    if (empty($keyword)) {
-        wp_send_json_error('キーワードが指定されていません');
-    }
-    
-    $suggestions = array();
-    
-    // キーワード検索（助成金タイトルから）
-    $keyword_query = new WP_Query(array(
-        'post_type' => 'grant',
-        's' => $keyword,
-        'posts_per_page' => 5,
-        'fields' => 'ids'
-    ));
-    
-    if ($keyword_query->have_posts()) {
-        while ($keyword_query->have_posts()) {
-            $keyword_query->the_post();
-            $suggestions[] = array(
-                'type' => 'keyword',
-                'icon' => 'fa-search',
-                'text' => get_the_title(),
-                'count' => 1
-            );
-        }
-        wp_reset_postdata();
-    }
-    
-    // カテゴリ検索
-    $categories = get_terms(array(
-        'taxonomy' => 'grant_category',
-        'search' => $keyword,
-        'number' => 3,
-        'hide_empty' => true
-    ));
-    
-    if (!is_wp_error($categories)) {
-        foreach ($categories as $category) {
-            $suggestions[] = array(
-                'type' => 'category',
-                'icon' => 'fa-folder',
-                'text' => $category->name,
-                'count' => $category->count
-            );
-        }
-    }
-    
-    // 都道府県検索
-    $prefectures = get_terms(array(
-        'taxonomy' => 'grant_prefecture',
-        'search' => $keyword,
-        'number' => 3,
-        'hide_empty' => true
-    ));
-    
-    if (!is_wp_error($prefectures)) {
-        foreach ($prefectures as $prefecture) {
-            $suggestions[] = array(
-                'type' => 'prefecture',
-                'icon' => 'fa-map-marker-alt',
-                'text' => $prefecture->name,
-                'count' => $prefecture->count
-            );
-        }
-    }
-    
-    // トレンド追加（サンプル）
-    $trending_keywords = array(
-        'IT導入補助金' => 156,
-        'ものづくり補助金' => 89,
-        '事業再構築補助金' => 234,
-        'DX推進' => 145,
-        'インボイス対応' => 267
-    );
-    
-    foreach ($trending_keywords as $trend => $count) {
-        if (mb_stripos($trend, $keyword) !== false) {
-            $suggestions[] = array(
-                'type' => 'trending',
-                'icon' => 'fa-fire',
-                'text' => $trend,
-                'count' => $count
-            );
-        }
-    }
-    
-    // 重複削除
-    $suggestions = array_map("unserialize", array_unique(array_map("serialize", $suggestions)));
-    
-    // 最大10件に制限
-    $suggestions = array_slice($suggestions, 0, 10);
-    
-    wp_send_json_success(array(
-        'suggestions' => $suggestions,
-        'total' => count($suggestions)
-    ));
-}
+// 4737行目のgi_ajax_get_search_suggestions関数は重複のため削除（1676行目で定義済み）
 
 /**
  * 助成金一覧ページのリライトルール
