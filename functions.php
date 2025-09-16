@@ -2895,13 +2895,7 @@ function gi_safe_attr($value) {
     return esc_attr($value);
 }
 
-// 安全なHTML出力
-function gi_safe_escape($value) {
-    if (is_array($value)) {
-        return array_map('esc_html', $value);
-    }
-    return esc_html($value);
-}
+// gi_safe_escape関数は1021行目で定義済みのため削除
 
 // 安全な数値フォーマット
 function gi_safe_number_format($value, $decimals = 0) {
@@ -2912,23 +2906,7 @@ function gi_safe_number_format($value, $decimals = 0) {
     return number_format($num, $decimals);
 }
 
-// 安全な日付フォーマット
-function gi_safe_date_format($date, $format = 'Y-m-d') {
-    if (empty($date)) {
-        return '';
-    }
-    
-    if (is_numeric($date)) {
-        return date($format, $date);
-    }
-    
-    $timestamp = strtotime($date);
-    if ($timestamp === false) {
-        return $date;
-    }
-    
-    return date($format, $timestamp);
-}
+// gi_safe_date_format関数は1040行目で定義済みのため削除
 
 // 安全なパーセント表示
 function gi_safe_percent_format($value, $decimals = 1) {
@@ -2946,21 +2924,7 @@ function gi_safe_json($data) {
     return wp_json_encode($data, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE);
 }
 
-// 安全なテキスト切り取り
-function gi_safe_excerpt($text, $length = 100, $more = '...') {
-    if (mb_strlen($text) <= $length) {
-        return esc_html($text);
-    }
-    
-    $excerpt = mb_substr($text, 0, $length);
-    $last_space = mb_strrpos($excerpt, ' ');
-    
-    if ($last_space !== false) {
-        $excerpt = mb_substr($excerpt, 0, $last_space);
-    }
-    
-    return esc_html($excerpt . $more);
-}
+// gi_safe_excerpt関数は1028行目で定義済みのため削除
 
 /**
  * 動的パス取得関数（完全版）
@@ -3111,21 +3075,7 @@ if (!function_exists('gi_format_amount_with_unit')) {
     }
 }
 
-/**
- * 補助ヘルパー: ACFのapplication_statusをUI用にマッピング
- */
-function gi_map_application_status_ui($app_status) {
-    switch ($app_status) {
-        case 'open':
-            return 'active';
-        case 'upcoming':
-            return 'upcoming';
-        case 'closed':
-            return 'closed';
-        default:
-            return 'active';
-    }
-}
+// gi_map_application_status_ui関数は926行目で定義済みのため削除
 
 // gi_get_user_favorites関数は993行目で定義済みのため削除
 
