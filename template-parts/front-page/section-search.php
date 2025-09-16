@@ -1289,14 +1289,18 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         },
         
-        // フォーム送信処理
+        // フォーム送信処理（改良版：一覧ページへ直接遷移）
         handleSubmit(e) {
             e.preventDefault();
-            this.executeSearch();
+            
+            // 検索パラメータを取得して一覧ページに遷移
+            const params = this.getSearchParams();
+            const queryString = new URLSearchParams(params).toString();
+            window.location.href = `<?php echo home_url('/grants/'); ?>?${queryString}`;
         },
         
-        // 検索実行
-        async executeSearch() {
+        // 検索実行（改良版：一覧ページへの直接遷移対応）
+        async executeSearch(redirectToArchive = true) {
             if (this.isLoading) return;
             
             this.isLoading = true;

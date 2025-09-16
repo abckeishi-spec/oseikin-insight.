@@ -990,58 +990,28 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // 検索実行
+    // 検索実行（改良版：一覧ページへの確実な遷移）
     function executeSearch(e) {
         if (e) e.preventDefault();
         
-        // 統合検索システムがある場合はそれを使用
-        if (window.GISearchManager) {
-            // フォームデータを収集
-            const keyword = elements.searchKeyword?.value || '';
-            const category = elements.filterCategory?.value || '';
-            const prefecture = elements.filterPrefecture?.value || '';
-            const amount = elements.filterAmount?.value || '';
-            const status = elements.filterStatus?.value || '';
-            
-            // 統合検索システムのパラメータを更新
-            window.GISearchManager.currentParams = {
-                search: keyword,
-                categories: category ? [category] : [],
-                prefectures: prefecture ? [prefecture] : [],
-                amount: amount,
-                status: status ? [status] : [],
-                difficulty: [],
-                success_rate: [],
-                sort: 'date_desc',
-                view: 'grid',
-                page: 1
-            };
-            
-            // 検索実行
-            window.GISearchManager.executeSearch();
-            
-            // モーダルを閉じる
-            closeSearchModal();
-            closeMobileMenu();
-        } else {
-            // フォールバック: URLパラメータで一覧ページへ遷移
-            const params = new URLSearchParams();
-            
-            const keyword = elements.searchKeyword?.value;
-            const category = elements.filterCategory?.value;
-            const prefecture = elements.filterPrefecture?.value;
-            const amount = elements.filterAmount?.value;
-            const status = elements.filterStatus?.value;
-            
-            if (keyword) params.set('search', keyword);
-            if (category) params.set('category', category);
-            if (prefecture) params.set('prefecture', prefecture);
-            if (amount) params.set('amount', amount);
-            if (status) params.set('status', status);
-            
-            const searchUrl = window.giSearchConfig.grantsUrl + (params.toString() ? '?' + params.toString() : '');
-            window.location.href = searchUrl;
-        }
+        // フォームデータを収集
+        const params = new URLSearchParams();
+        
+        const keyword = elements.searchKeyword?.value;
+        const category = elements.filterCategory?.value;
+        const prefecture = elements.filterPrefecture?.value;
+        const amount = elements.filterAmount?.value;
+        const status = elements.filterStatus?.value;
+        
+        if (keyword) params.set('search', keyword);
+        if (category) params.set('category', category);
+        if (prefecture) params.set('prefecture', prefecture);
+        if (amount) params.set('amount', amount);
+        if (status) params.set('status', status);
+        
+        // 一覧ページへ遷移（archive-grant.phpページ）
+        const searchUrl = '<?php echo home_url('/grants/'); ?>' + (params.toString() ? '?' + params.toString() : '');
+        window.location.href = searchUrl;
     }
     
     // イベントリスナーの設定

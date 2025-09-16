@@ -4755,6 +4755,114 @@ function gi_ajax_permissions() {
 add_action('init', 'gi_ajax_permissions');
 
 /**
+ * AJAX - 検索サジェスト取得
+ */
+function gi_ajax_get_search_suggestions() {
+    // Nonce検証
+    if (!wp_verify_nonce($_POST['nonce'] ?? '', 'gi_ajax_nonce')) {
+        wp_send_json_error('セキュリティチェックに失敗しました');
+    }
+    
+    $keyword = sanitize_text_field($_POST['keyword'] ?? '');
+    
+    if (empty($keyword)) {
+        wp_send_json_error('キーワードが指定されていません');
+    }
+    
+    $suggestions = array();
+    
+    // キーワード検索（助成金タイトルから）
+    $keyword_query = new WP_Query(array(
+        'post_type' => 'grant',
+        's' => $keyword,
+        'posts_per_page' => 5,
+        'fields' => 'ids'
+    ));
+    
+    if ($keyword_query->have_posts()) {
+        while ($keyword_query->have_posts()) {
+            $keyword_query->the_post();
+            $suggestions[] = array(
+                'type' => 'keyword',
+                'icon' => 'fa-search',
+                'text' => get_the_title(),
+                'count' => 1
+            );
+        }
+        wp_reset_postdata();
+    }
+    
+    // カテゴリ検索
+    $categories = get_terms(array(
+        'taxonomy' => 'grant_category',
+        'search' => $keyword,
+        'number' => 3,
+        'hide_empty' => true
+    ));
+    
+    if (!is_wp_error($categories)) {
+        foreach ($categories as $category) {
+            $suggestions[] = array(
+                'type' => 'category',
+                'icon' => 'fa-folder',
+                'text' => $category->name,
+                'count' => $category->count
+            );
+        }
+    }
+    
+    // 都道府県検索
+    $prefectures = get_terms(array(
+        'taxonomy' => 'grant_prefecture',
+        'search' => $keyword,
+        'number' => 3,
+        'hide_empty' => true
+    ));
+    
+    if (!is_wp_error($prefectures)) {
+        foreach ($prefectures as $prefecture) {
+            $suggestions[] = array(
+                'type' => 'prefecture',
+                'icon' => 'fa-map-marker-alt',
+                'text' => $prefecture->name,
+                'count' => $prefecture->count
+            );
+        }
+    }
+    
+    // トレンド追加（サンプル）
+    $trending_keywords = array(
+        'IT導入補助金' => 156,
+        'ものづくり補助金' => 89,
+        '事業再構築補助金' => 234,
+        'DX推進' => 145,
+        'インボイス対応' => 267
+    );
+    
+    foreach ($trending_keywords as $trend => $count) {
+        if (mb_stripos($trend, $keyword) !== false) {
+            $suggestions[] = array(
+                'type' => 'trending',
+                'icon' => 'fa-fire',
+                'text' => $trend,
+                'count' => $count
+            );
+        }
+    }
+    
+    // 重複削除
+    $suggestions = array_map("unserialize", array_unique(array_map("serialize", $suggestions)));
+    
+    // 最大10件に制限
+    $suggestions = array_slice($suggestions, 0, 10);
+    
+    wp_send_json_success(array(
+        'suggestions' => $suggestions,
+        'total' => count($suggestions)
+    ));
+}
+
+/**
  * 助成金一覧ページのリライトルール
  */
 function gi_add_rewrite_rules() {

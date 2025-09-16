@@ -1232,6 +1232,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 searchInput.addEventListener('input', (e) => {
                     self.handleSearchInput(e);
                 });
+
+                // フォーカス時にサジェスト表示
+                searchInput.addEventListener('focus', () => {
+                    const value = searchInput.value.trim();
+                    if (value.length >= 1) {
+                        self.showSearchSuggestions(value);
+                    }
+                });
+
+                // フォーカスアウト時にサジェスト非表示
+                searchInput.addEventListener('blur', () => {
+                    self.hideSearchSuggestions();
+                });
             }
 
             // 検索クリア
@@ -1363,7 +1376,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         },
 
-        // 検索入力処理
+        // 検索入力処理（改良版：リアルタイム検索対応）
         handleSearchInput(e) {
             const value = e.target.value.trim();
             const clearBtn = document.getElementById('search-clear');
@@ -1373,11 +1386,24 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             // サジェスト表示
-            if (value.length >= 2) {
+            if (value.length >= 1) {
                 this.showSearchSuggestions(value);
             } else {
                 this.hideSearchSuggestions();
             }
+
+            // リアルタイム検索（デバウンス付き）
+            if (this.searchTimer) {
+                clearTimeout(this.searchTimer);
+            }
+
+            this.searchTimer = setTimeout(() => {
+                if (value.length >= 2 || value.length === 0) {
+                    this.state.filters.search = value;
+                    this.state.currentPage = 1;
+                    this.executeSearch();
+                }
+            }, 500); // 500ms遅延
         },
 
         // 検索実行
@@ -2285,13 +2311,152 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         },
 
-        showSearchSuggestions(value) {
-            // 検索サジェスト表示
-            console.log('検索サジェスト:', value);
+        // 検索サジェスト表示（改良版）
+        async showSearchSuggestions(value) {
+            // サジェストコンテナを作成または取得
+            let suggestContainer = document.getElementById('search-suggestions-container');
+            if (!suggestContainer) {
+                suggestContainer = document.createElement('div');
+                suggestContainer.id = 'search-suggestions-container';
+                suggestContainer.className = 'search-suggestions absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 max-h-96 overflow-y-auto z-50';
+                
+                const searchWrapper = document.querySelector('.search-input-wrapper');
+                if (searchWrapper) {
+                    searchWrapper.style.position = 'relative';
+                    searchWrapper.appendChild(suggestContainer);
+                }
+            }
+
+            // ローカルサジェストを表示
+            this.showLocalSuggestions(value, suggestContainer);
         },
 
+        // ローカルサジェスト表示
+        showLocalSuggestions(keyword, container) {
+            // サンプルサジェストデータ
+            const allSuggestions = [
+                { type: 'keyword', icon: 'fa-search', text: 'IT導入補助金', count: 156 },
+                { type: 'keyword', icon: 'fa-search', text: 'ものづくり補助金', count: 89 },
+                { type: 'keyword', icon: 'fa-search', text: '事業再構築補助金', count: 234 },
+                { type: 'keyword', icon: 'fa-search', text: '小規模事業者持続化補助金', count: 67 },
+                { type: 'category', icon: 'fa-folder', text: 'DX・デジタル化', count: 45 },
+                { type: 'category', icon: 'fa-folder', text: '設備投資', count: 78 },
+                { type: 'category', icon: 'fa-folder', text: '研究開発', count: 56 },
+                { type: 'prefecture', icon: 'fa-map-marker-alt', text: '東京都', count: 189 },
+                { type: 'prefecture', icon: 'fa-map-marker-alt', text: '大阪府', count: 123 },
+                { type: 'prefecture', icon: 'fa-map-marker-alt', text: '愛知県', count: 98 },
+                { type: 'trending', icon: 'fa-fire', text: 'インボイス対応', count: 267 },
+                { type: 'trending', icon: 'fa-fire', text: '省エネ・脱炭素', count: 145 }
+            ];
+
+            // キーワードでフィルタリング
+            const suggestions = keyword.length >= 1 ? 
+                allSuggestions.filter(item => 
+                    item.text.toLowerCase().includes(keyword.toLowerCase())
+                ).slice(0, 8) : 
+                allSuggestions.slice(0, 5);
+
+            this.displaySuggestions(suggestions, container);
+        },
+
+        // サジェスト表示
+        displaySuggestions(suggestions, container) {
+            if (!container) return;
+
+            if (suggestions.length === 0) {
+                container.innerHTML = `
+                    <div class="p-4 text-center text-gray-500 dark:text-gray-400">
+                        <i class="fas fa-search mb-2 text-2xl"></i>
+                        <p class="text-sm">候補が見つかりません</p>
+                    </div>
+                `;
+                container.classList.remove('hidden');
+                return;
+            }
+
+            let html = '<div class="divide-y divide-gray-100 dark:divide-gray-700">';
+            
+            // グループ化して表示
+            const grouped = {};
+            suggestions.forEach(item => {
+                if (!grouped[item.type]) {
+                    grouped[item.type] = [];
+                }
+                grouped[item.type].push(item);
+            });
+
+            Object.keys(grouped).forEach(type => {
+                const typeLabel = this.getSuggestionTypeLabel(type);
+                html += `<div class="px-3 py-2 bg-gray-50 dark:bg-gray-900 text-xs font-semibold text-gray-500 dark:text-gray-400">${typeLabel}</div>`;
+                
+                grouped[type].forEach(item => {
+                    const typeColor = this.getSuggestionTypeColor(item.type);
+                    html += `
+                        <div class="suggestion-item flex items-center justify-between p-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors" data-value="${item.text}">
+                            <div class="flex items-center gap-3">
+                                <i class="fas ${item.icon} ${typeColor} w-5"></i>
+                                <div class="font-medium text-gray-900 dark:text-gray-100">${item.text}</div>
+                            </div>
+                            ${item.count > 0 ? `
+                                <span class="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full">
+                                    ${item.count}件
+                                </span>
+                            ` : ''}
+                        </div>
+                    `;
+                });
+            });
+            
+            html += '</div>';
+            container.innerHTML = html;
+            container.classList.remove('hidden');
+
+            // クリックイベントを追加
+            container.querySelectorAll('.suggestion-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const searchInput = document.getElementById('grant-search');
+                    if (searchInput) {
+                        searchInput.value = item.dataset.value;
+                        this.state.filters.search = item.dataset.value;
+                        this.executeSearch();
+                        this.hideSearchSuggestions();
+                    }
+                });
+            });
+        },
+
+        // サジェストタイプラベル
+        getSuggestionTypeLabel(type) {
+            const labels = {
+                keyword: 'キーワード',
+                category: 'カテゴリ',
+                prefecture: '地域',
+                recent: '最近の検索',
+                trending: 'トレンド'
+            };
+            return labels[type] || type;
+        },
+
+        // サジェストタイプ色
+        getSuggestionTypeColor(type) {
+            const colors = {
+                keyword: 'text-blue-500',
+                category: 'text-green-500',
+                prefecture: 'text-purple-500',
+                recent: 'text-gray-500',
+                trending: 'text-red-500'
+            };
+            return colors[type] || 'text-gray-500';
+        },
+
+        // 検索サジェスト非表示
         hideSearchSuggestions() {
-            // 検索サジェスト非表示
+            const container = document.getElementById('search-suggestions-container');
+            if (container) {
+                setTimeout(() => {
+                    container.classList.add('hidden');
+                }, 200);
+            }
         },
 
         shareGrant(url, title) {
